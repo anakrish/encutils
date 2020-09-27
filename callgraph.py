@@ -5,10 +5,9 @@
 
 import argparse
 import pickle
-import os
-import sys
 import tempfile
-from elf_parser import ELFParser
+from elf_parser_factory import get_elf_parser
+import os
 
 colorize = True
 location = False
@@ -18,37 +17,8 @@ address_color = '\033[0;38;5;106m'
 location_color = '\033[0;38;5;241m'
 more_color = '\033[0;31m'
 recur_color = '\033[0;31m'
-
 colorize = lambda str, c: ('%s%s\033[0m' % (c, str))
     
-def analyze(table, elf_parser):
-    # Consider both calls and jmps as calls.
-    callstmt = elf_parser.parser_config["calls_statement_matching_pattern"]
-    leastmt = elf_parser.parser_config["LEA_statement_matching_pattern"]
-
-    for fcn in table.functions():
-        callees = callstmt.findall(fcn.code) + leastmt.findall(fcn.code)
-        if len(callees) == 0:
-            #print('%s %s calls []' % (hex(fcn.address), fcn.name))
-            continue
-
-        #print('%s %s calls' % (hex(fcn.address), fcn.name))
-        for c in callees:
-            # Avoid recursive calls.
-            if c == fcn:
-                continue
-            callee_address = int(c[1], 16)
-            callee_name = c[2]
-            #print('    %s %s' % (hex(callee_address), callee_name))
-            try:
-                callee_fcn = table.lookup(callee_address)
-                if callee_fcn not in fcn.callees:
-                    fcn.callees.append(callee_fcn)
-                if fcn not in callee_fcn.callers:
-                    callee_fcn.callers.append(fcn)
-            except:
-                #print('Could not resolve callee %s %s' % (callee_address, callee_name))
-                pass
 
 def print_callstacks(table, fcnname, depth):
     def walk(stack, fcn, d, last=[]):
@@ -131,15 +101,12 @@ if __name__ == "__main__":
         except:
             pass
 
-    elf_parser = ELFParser(args.elf, location) 
+    elf_parser = get_elf_parser(args.elf, location) 
     if not table:
         table = elf_parser.functions_table
 
     if args.cache and not cache_used:
         pickle.dump(table, open(cache_file, 'wb'))
-
-    # Analyze
-    analyze(table, elf_parser)
         
     names = args.__dict__['function-name']
     for name in names:
