@@ -1,17 +1,13 @@
-# #!/usr/bin/env python3
+#!/usr/bin/env python3
 # Copyright (c) Open Enclave SDK contributors.
 # Licensed under the MIT License.
 
-from collections import namedtuple
+
 import argparse
 import pickle
-import os
-import re
-import subprocess
-import sys
 import tempfile
-
-Function = namedtuple('Function', 'name location address code callees callers')
+from elf_parser_factory import get_elf_parser
+import os
 
 colorize = True
 location = False
@@ -21,117 +17,8 @@ address_color = '\033[0;38;5;106m'
 location_color = '\033[0;38;5;241m'
 more_color = '\033[0;31m'
 recur_color = '\033[0;31m'
-
 colorize = lambda str, c: ('%s%s\033[0m' % (c, str))
-
-class FunctionTable:
-    def __init__(self):
-        self.table = {}
-        self.table_by_name = {}
-        
-    def add(self, f):
-        self.table[f.address] = f
-        if f.name in self.table_by_name:
-            self.table_by_name[f.name].append(f)
-        else:
-            self.table_by_name[f.name] = [f]
-            
-    def functions(self):
-        return self.table.values()
-
-    def lookup(self, address):
-        return self.table[address]
-
-    def lookup_by_name(self, name):
-        try:
-            return self.table_by_name[name]
-        except:
-            return []
-
-    def get_function_names(self):
-        return self.table_by_name.keys()
-
-def get_locations_table(elf):
-    out = subprocess.check_output(['nm', '-l', '-C', elf], encoding='utf-8')
-    symbols = re.findall('([0-9a-fA-F]{16,})\s+.\s+(\S+)\s+(\S+)\s*', out)
-
-    if len(symbols) > 0:
-        table = {}
-        for sym in symbols:
-            table[int(sym[0], 16)] = sym[2]
-        return table
     
-def get_functions(elf):
-    # Disassemble elf binary using objdump
-    args = ['objdump', '-C', '-d', elf]
-    loc_table = None
-    if location:
-        loc_table = get_locations_table(elf)
-        if not loc_table:
-            args.insert(-1, '-l')
-
-    out = subprocess.check_output(args, encoding='utf-8')
-
-    # Each function ends with two new lines
-    fcn_listings = out.split('\n\n')
-
-    functions = FunctionTable()
-    # Fetch function name
-    header_re = re.compile('([0-9a-fA-F]{16,}) <(.+)>:')
-    location_re = re.compile('.+\n\S+\(\):\n(\S+:\d+)')
-    for listing in fcn_listings:
-        m = header_re.match(listing)
-        # Check if it is indeed a function
-        if not m:
-            continue
-
-        address = int(m[1], 16)
-        loc = []
-        if location:
-            if loc_table and address in loc_table:
-                loc = loc_table[address]
-            else:
-                lm = location_re.match(listing)
-                if lm:
-                    loc = lm[1]
-
-        f = Function(name=m[2],
-                     location=loc,
-                     address=int(m[1], 16), # Convert to hex for look up
-                     code=listing,
-                     callees=[],
-                     callers=[])
-        functions.add(f)
-    return functions
-
-def analyze(table):
-    # Consider both calls and jmps as calls.
-    callstmt = re.compile('(callq|jmpq)\s+(\S+)\s+<(.+)>')
-    leastmt = re.compile('(lea)\s+.+# (\S+)\s+<(.+)>\s*') 
-
-    for fcn in table.functions():
-        callees = callstmt.findall(fcn.code) + leastmt.findall(fcn.code)
-        if len(callees) == 0:
-            #print('%s %s calls []' % (hex(fcn.address), fcn.name))
-            continue
-
-        #print('%s %s calls' % (hex(fcn.address), fcn.name))
-        for c in callees:
-            # Avoid recursive calls.
-            if c == fcn:
-                continue
-            callee_address = int(c[1], 16)
-            callee_name = c[2]
-            #print('    %s %s' % (hex(callee_address), callee_name))
-            try:
-                callee_fcn = table.lookup(callee_address)
-                if callee_fcn not in fcn.callees:
-                    fcn.callees.append(callee_fcn)
-                if fcn not in callee_fcn.callers:
-                    callee_fcn.callers.append(fcn)
-            except:
-                #print('Could not resolve callee %s %s' % (callee_address, callee_name))
-                pass
 
 def print_callstacks(table, fcnname, depth):
     def walk(stack, fcn, d, last=[]):
@@ -178,7 +65,6 @@ def print_callstacks(table, fcnname, depth):
             if fcnname in name:
                 print_callstacks(table, name, depth)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Analyze enclave binary.')
     parser.add_argument('elf', help='path to enclave binary')
@@ -214,15 +100,13 @@ if __name__ == "__main__":
                 cache_used = True
         except:
             pass
-                        
+
+    elf_parser = get_elf_parser(args.elf, location) 
     if not table:
-        table = get_functions(args.elf)
+        table = elf_parser.functions_table
 
     if args.cache and not cache_used:
         pickle.dump(table, open(cache_file, 'wb'))
-
-    # Analyze
-    analyze(table)
         
     names = args.__dict__['function-name']
     for name in names:
