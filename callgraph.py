@@ -40,7 +40,7 @@ def print_callstacks(table, fcnname, depth):
         if len(stack) == depth and len(fcn.callers) > 0:
             desc += ' ' + colorize('...', more_color)
         if fcn in stack:
-            desc += ' ' + colorize(' possible recursive call ', recursive_color)
+            desc += ' ' + colorize(' possible recursive call ', recur_color)
 
         print('%s %s' % (prefix, desc))
         if len(stack) == depth or fcn in stack:
@@ -104,9 +104,13 @@ if __name__ == "__main__":
     elf_parser = get_elf_parser(args.elf, location) 
     if not table:
         table = elf_parser.functions_table
+    else:
+        elf_parser.functions_table = table
 
     if args.cache and not cache_used:
         pickle.dump(table, open(cache_file, 'wb'))
+
+    elf_parser.analyze()
         
     names = args.__dict__['function-name']
     for name in names:

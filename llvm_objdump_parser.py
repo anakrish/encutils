@@ -26,7 +26,6 @@ class LLVMObjDumpParser():
         
         self.construct_symbols_to_address_dict()
         self.construct_functions_table()
-        self.analyze()
 
     def construct_symbols_to_address_dict(self):
         symbols_output = subprocess.check_output(self.symbol_table_args, encoding='utf-8')

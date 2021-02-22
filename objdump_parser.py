@@ -24,7 +24,6 @@ class ObjDumpParser():
         self.leas_statement_matching_pattern        = '(lea)\s+.+# (\S+)\s+<(.+)>\s*'
 
         self.construct_functions_table()
-        self.analyze()
     
     def construct_functions_table(self):
         
